@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>兑奖核销前台</title>
+    <style>
+        /* CSS 样式：主打现代、大字体、防误触 */
+        body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background-color: #f3f4f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: white; padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); width: 90%; max-width: 450px; }
+        h2 { text-align: center; color: #111827; margin-top: 0; margin-bottom: 1.5rem; }
+        
+        .radio-group { display: flex; flex-direction: column; gap: 12px; margin-bottom: 1.5rem; }
+        .radio-label { display: flex; align-items: center; padding: 12px 15px; border: 2px solid #e5e7eb; border-radius: 10px; cursor: pointer; transition: all 0.2s; font-size: 1.1rem; }
+        .radio-label:hover { background-color: #f9fafb; }
+        input[type="radio"] { transform: scale(1.5); margin-right: 15px; cursor: pointer; }
+        input[type="radio"]:checked + span { font-weight: bold; color: #4f46e5; }
+        
+        .input-group { margin-bottom: 1.5rem; }
+        #studentId { width: 100%; box-sizing: border-box; padding: 18px; font-size: 1.5rem; text-align: center; border: 2px solid #d1d5db; border-radius: 10px; outline: none; transition: border-color 0.2s; font-weight: bold; letter-spacing: 2px; }
+        #studentId:focus { border-color: #4f46e5; box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.2); }
+        #studentId::placeholder { font-weight: normal; letter-spacing: normal; font-size: 1.2rem; color: #9ca3af; }
+        
+        button { width: 100%; padding: 16px; font-size: 1.2rem; background-color: #4f46e5; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; transition: background-color 0.2s; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.3); }
+        button:hover { background-color: #4338ca; }
+        
+        #resultCard { margin-top: 1.5rem; padding: 16px; border-radius: 10px; font-size: 1.1rem; text-align: center; display: none; white-space: pre-wrap; font-weight: bold; line-height: 1.5; }
+        .success { background-color: #def7ec; border: 2px solid #31c48d; color: #046c4e; }
+        .error { background-color: #fde8e8; border: 2px solid #f98080; color: #9b1c1c; animation: shake 0.5s cubic-based; }
+        
+        /* 报错时的震动动画，增强警示感 */
+        @keyframes shake { 0%, 100% {transform: translateX(0);} 20%, 60% {transform: translateX(-7px);} 40%, 80% {transform: translateX(7px);} }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🎟️ 学生节核销工作台</h2>
+        
+        <div class="radio-group">
+            <label class="radio-label"><input type="radio" name="claimType" value="集章兑奖" checked> <span>1. 集章兑奖</span></label>
+            <label class="radio-label"><input type="radio" name="claimType" value="路演推送兑奖"> <span>2. 路演推送兑奖</span></label>
+            <label class="radio-label"><input type="radio" name="claimType" value="奖品推送兑奖"> <span>3. 奖品推送兑奖</span></label>
+        </div>
+
+        <div class="input-group">
+            <input type="text" id="studentId" placeholder="请输入学号" autocomplete="off" maxlength="10">
+        </div>
+
+        <button onclick="submitClaim()">确认核销 (Enter)</button>
+
+        <div id="resultCard"></div>
+    </div>
+
+    <script>
+        const studentIdInput = document.getElementById('studentId');
+        // 页面一打开，光标自动闪烁在输入框里
+        studentIdInput.focus();
+
+        // 监听回车键，让扫码枪或者键盘操作如丝般顺滑
+        studentIdInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') { submitClaim(); }
+        });
+
+        async function submitClaim() {
+            const studentId = studentIdInput.value.trim();
+            const claimType = document.querySelector('input[name="claimType"]:checked').value;
+            
+            if (!studentId) {
+                showResult('error', '⚠️ 请输入正确的学号！');
+                return;
+            }
+
+            const apiUrl = '/api/claim';
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ student_id: studentId, claim_type: claimType })
+                });
+                
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    showResult('success', data.message);
+                    // 核心细节：成功后立刻清空输入框，准备迎接下一个同学
+                    studentIdInput.value = ''; 
+                } else if (data.status === 'duplicate') {
+                    showResult('error', data.message);
+                    // 核心细节：拦截后全选错误学号，干事直接键盘输入下一个学号就能覆盖，不用按退格键
+                    studentIdInput.select(); 
+                } else {
+                    showResult('error', data.message);
+                }
+            } catch (error) {
+                showResult('error', '🚨 网络断开或后端未启动！\n请检查黑框框程序。');
+            }
+            
+            // 无论成功还是失败，焦点永远锁死在输入框
+            studentIdInput.focus();
+        }
+
+        // 处理提示卡片及其震动动画
+        function showResult(type, message) {
+            const resultCard = document.getElementById('resultCard');
+            resultCard.style.display = 'block';
+            resultCard.className = type;
+            resultCard.textContent = message;
+            
+            // 必须重新触发一次重绘，否则连续报错时不会重复触发震动动画
+            resultCard.style.animation = 'none';
+            resultCard.offsetHeight; 
+            resultCard.style.animation = null;
+        }
+    </script>
+</body>
+</html>

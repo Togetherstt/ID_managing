@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>后台管理 - 核销系统</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; background-color: #f3f4f6; padding: 20px; color: #333; }
+        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 800px; margin: 0 auto; }
+        h2 { text-align: center; color: #1f2937; }
+        
+        /* 登录区样式 */
+        #loginSection { text-align: center; margin-top: 50px; }
+        input[type="password"] { padding: 12px; font-size: 1.2rem; border: 1px solid #ccc; border-radius: 8px; width: 200px; }
+        button { padding: 12px 20px; font-size: 1rem; background-color: #10b981; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        button:hover { background-color: #059669; }
+        
+        /* 数据区样式 */
+        #dashboardSection { display: none; }
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px; }
+        .stat-card { background: #eff6ff; padding: 20px; border-radius: 8px; text-align: center; border: 1px solid #bfdbfe; }
+        .stat-card h3 { margin: 0; color: #1e3a8a; font-size: 1.1rem; }
+        .stat-card p { margin: 10px 0 0 0; font-size: 2rem; font-weight: bold; color: #2563eb; }
+        
+        .export-btn { background-color: #3b82f6; width: 100%; margin-bottom: 20px; }
+        .export-btn:hover { background-color: #2563eb; }
+        
+        .danger-btn { background-color: #ef4444; width: 100%; margin-bottom: 20px; padding: 12px 20px; font-size: 1rem; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        .danger-btn:hover { background-color: #dc2626; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        th { background-color: #f9fafb; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>📊 核销数据管理后台</h2>
+        
+        <!-- 登录区 -->
+        <div id="loginSection">
+            <p>请输入管理员密码以查看数据：</p>
+            <input type="password" id="adminPwd" placeholder="输入密码" onkeypress="if(event.key === 'Enter') login()">
+            <button onclick="login()">进入后台</button>
+            <p id="loginError" style="color: red; display: none;">密码错误，请重试！</p>
+        </div>
+
+        <!-- 数据看板区 -->
+        <div id="dashboardSection">
+            <button class="export-btn" onclick="exportData()">📥 一键导出所有核销记录 (Excel)</button>
+            <button class="danger-btn" onclick="clearData()">🗑️ 清空所有核销数据</button>
+            <div class="stats-grid">
+                <div class="stat-card"><h3>集章兑奖</h3><p id="count_jizhang">0</p></div>
+                <div class="stat-card"><h3>路演推送兑奖</h3><p id="count_luyan">0</p></div>
+                <div class="stat-card"><h3>奖品推送兑奖</h3><p id="count_jiangpin">0</p></div>
+            </div>
+
+            <h3>🕒 最新核销流水 (最近10条)</h3>
+            <table>
+                <thead><tr><th>学号</th><th>兑奖类型</th><th>时间</th></tr></thead>
+                <tbody id="logTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+        let currentPassword = '';
+
+        async function login() {
+            currentPassword = document.getElementById('adminPwd').value;
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/stats?password=${currentPassword}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('loginSection').style.display = 'none';
+                    document.getElementById('dashboardSection').style.display = 'block';
+                    updateDashboard(data);
+                } else {
+                    document.getElementById('loginError').style.display = 'block';
+                }
+            } catch (e) {
+                alert("网络连接失败，请确保后端程序已启动！");
+            }
+        }
+
+        function updateDashboard(data) {
+            // 更新统计数字
+            document.getElementById('count_jizhang').textContent = data.counts['集章兑奖'] || 0;
+            document.getElementById('count_luyan').textContent = data.counts['路演推送兑奖'] || 0;
+            document.getElementById('count_jiangpin').textContent = data.counts['奖品推送兑奖'] || 0;
+            
+            // 更新表格
+            const tbody = document.getElementById('logTableBody');
+            tbody.innerHTML = '';
+            data.recent_logs.forEach(log => {
+                tbody.innerHTML += `<tr><td>${log.student_id}</td><td>${log.claim_type}</td><td>${log.time}</td></tr>`;
+            });
+        }
+
+        function exportData() {
+            // 直接通过 URL 触发浏览器的文件下载机制
+            window.location.href = `${API_BASE}/api/admin/export?password=${currentPassword}`;
+        }
+
+        async function clearData() {
+            // 核心：二次确认防呆设计
+            const isConfirm = confirm("⚠️ 严重警告：\n\n此操作将永久删除所有同学的核销记录，且无法恢复！\n请确认您已经导出了备份数据。\n\n您确定要彻底清空吗？");
+            
+            if (!isConfirm) {
+                return; // 用户点击了取消，直接中止
+            }
+            
+            try {
+                // 发送 DELETE 请求给后端
+                const response = await fetch(`${API_BASE}/api/admin/clear?password=${currentPassword}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    alert("✅ 数据已全部清空，测试记录已重置！");
+                    // 重新调用 login 函数刷新看板（此时数字应该全变 0）
+                    login(); 
+                } else {
+                    alert("❌ 清空失败，请检查密码或网络。");
+                }
+            } catch (e) {
+                alert("网络连接失败！");
+            }
+        }
+    </script>
+</body>
+</html>
